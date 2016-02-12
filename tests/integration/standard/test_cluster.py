@@ -34,6 +34,16 @@ from cassandra.query import SimpleStatement, TraceUnavailable
 from tests.integration import use_singledc, PROTOCOL_VERSION, get_server_versions, get_node, CASSANDRA_VERSION, execute_until_pass, execute_with_long_wait_retry
 from tests.integration.util import assert_quiescent_pool_state
 
+try:
+    from psutil import Process as ProcessInfo
+    process_info = ProcessInfo()
+except ImportError:
+    process_info = None
+
+
+def get_connection_count(port):
+    return len([c for c in process_info.get_connections() if c.raddr[1] == port]) if process_info else None
+
 
 def setup_module():
     use_singledc()
@@ -585,3 +595,14 @@ class ClusterTests(unittest.TestCase):
         cluster.shutdown()
 
 
+    def test_connections_closed_on_shutdown_during_reconnect(self):
+        cluster = Cluster(protocol_version=PROTOCOL_VERSION, idle_heartbeat_interval=0.1)
+        connections_start = get_connection_count(cluster.port)
+        self.assertIsNotNone(connections_start)
+        session = cluster.connect()
+        cluster.control_connection.reconnect()
+        cluster.shutdown()
+        connections_end = get_connection_count(cluster.port)
+        self.assertIsNotNone(connections_end)
+        connections_left_open = connections_end - connections_start
+        self.assertEqual(0, connections_left_open)

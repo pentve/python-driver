@@ -2088,7 +2088,14 @@ class ControlConnection(object):
         while True:
             try:
                 connection = self._cluster.connection_factory(host.address, is_control_connection=True)
-                break
+
+                if self._is_shutdown:
+                    log.debug("[control connection] Shutdown in progress")
+                    connection.close()
+                    raise Exception("Shutdown in progress")
+                else:
+                    break
+
             except ProtocolVersionUnsupported as e:
                 self._cluster.protocol_downgrade(host.address, e.startup_version)
 
@@ -2188,6 +2195,7 @@ class ControlConnection(object):
             if self._connection:
                 self._connection.close()
                 del self._connection
+                self._connection = None # _connection may be accessed after shutdown
 
     def refresh_schema(self, **kwargs):
         if not self._meta_refresh_enabled:
